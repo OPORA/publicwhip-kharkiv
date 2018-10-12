@@ -1,34 +1,25 @@
 namespace :load_division do
   desc "Load votes"
   task :votes, [:from_date, :to_date] => :environment do |t, args|
-    load_votes = JSON.load(open('http://kharkivvoted.oporaua.org/votes_events'))
-    save_votes = Division.pluck(:date).uniq.to_a.map{|d| d.strftime('%Y-%m-%d')}
-    date_votes = load_votes - save_votes
+    load_votes = JSON.load(open("http://kharkivvoted.oporaua.org/votes_events"))
+    #save_votes = Division.pluck(:date).uniq.to_a.map{|d| d.strftime('%Y-%m-%d')}
+    date_votes = load_votes #- save_votes
     date_votes.each do |date|
-
-      url ="http://kharkivvoted.oporaua.org/votes_events/#{date}"
-      encoded_url = URI.encode(url)
-      divisions = JSON.load(open(URI.parse(encoded_url)))
+      divisions = JSON.load(open("http://kharkivvoted.oporaua.org/votes_events/#{date}"))
       divisions.each do |d|
-        date_vot = DateTime.parse(d[0]["date_vote"]).strftime("%F")
+        date_vote =  DateTime.parse(d[0]["date_vote"]).strftime("%F")
+        mps =  Mp.where("? >= start_date and end_date >= ?", date, date).to_a.uniq(&:deputy_id)
         division = Division.find_or_create_by(
-            date: date_vot,
+            date: date_vote,
             number: d[0]["number"],
             name: d[0]["name"],
             clock_time: DateTime.parse(d[0]["date_vote"]).strftime("%T"),
             result: d[0]["option"]
         )
         division.votes.destroy_all
-        votes_mp = []
-        p "Adeded deputy voted"
-        d[1]["votes"].each do |r|
-          votes_mp << r["voter_id"]
-          division.votes.create(deputy_id: r["voter_id"], vote: r["result"])
-        end
-        p "Adeded deputy absent"
-        Mp.where("start_date < ? AND end_date > ? AND deputy_id NOT IN (?)", date_vot, date_vot, votes_mp ).each do |m|
-          p m.deputy_id
-          division.votes.create(deputy_id: m.deputy_id, vote: "absent")
+        d[1]["votes"].each do |v|
+          mp = mps.find{|m| m["deputy_id"] == v["voter_id"] }.id
+          division.votes.create(deputy_id: mp, vote: v["result"] )
         end
       end
     end
